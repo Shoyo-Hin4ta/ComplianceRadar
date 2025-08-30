@@ -73,6 +73,15 @@ app.get("/health", async (req, res) => {
   }
 });
 
+// Lightweight warmup endpoint for cold start detection
+app.get("/api/warmup", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    message: "Backend is ready"
+  });
+});
+
 app.use("/api/compliance", createComplianceRoutes(io));
 app.use("/api", webhookRoutes);
 
