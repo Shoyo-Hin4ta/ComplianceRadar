@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+package-lock.json
+yarn.lock
+
+# Testing
+coverage/
+
+# Production
+build/
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Misc
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.npm
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-*
+
+# TypeScript
+*.tsbuildinfo
+.tmp/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Prisma
+/backend/prisma/migrations/
+/backend/prisma/*.db
+/backend/prisma/*.db-journal
+
+# Frontend specific
+/frontend/.vite/
+/frontend/dist/
+/frontend/node_modules/
+
+# Backend specific
+/backend/dist/
+/backend/node_modules/
+/backend/build/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Test files
+/backend/test-*.ts
+/backend/test-*.js

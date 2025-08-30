@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model BusinessProfile {
+  id                   String            @id @default(uuid())
+  state                String
+  city                 String?
+  industry             String
+  naicsCode            String?
+  employeeCount        Int
+  annualRevenue        Float?
+  specialCircumstances String[]
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  complianceChecks     ComplianceCheck[]
+}
+
+model ComplianceCheck {
+  id                  String           @id @default(uuid())
+  businessId          String
+  status              String
+  results             Json?
+  coverageReport      Json?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  citations           Json?
+  perplexityQuery     String?
+  perplexityRequestId String?
+  sourcesAnalyzed     Int?
+  business            BusinessProfile  @relation(fields: [businessId], references: [id])
+  rules               ComplianceRule[]
+  coverage            CoverageReport?
+
+  @@index([perplexityRequestId])
+}
+
+model ComplianceRule {
+  id               String          @id @default(uuid())
+  checkId          String
+  name             String
+  description      String?
+  source           String
+  sourceUrl        String?
+  sourceType       String
+  citation         String?
+  actionRequired   String?
+  verified         Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  agency           String?
+  appliesCondition String?
+  deadline         String?
+  extractedFrom    String?
+  formNumber       String?
+  penalty          String?
+  requirementType  String?
+  check            ComplianceCheck @relation(fields: [checkId], references: [id])
+
+  @@index([checkId])
+  @@index([sourceType])
+  @@index([requirementType])
+  @@index([agency])
+}
+
+model QueryTemplate {
+  id                String   @id @default(uuid())
+  category          String
+  subcategory       String?
+  query             String
+  naicsCode         String?
+  employeeThreshold Int?
+  metadata          Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([category])
+  @@index([subcategory])
+  @@index([naicsCode])
+}
+
+model SearchCache {
+  id        String   @id @default(uuid())
+  cacheKey  String   @unique
+  query     String
+  results   Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([cacheKey])
+  @@index([expiresAt])
+}
+
+model IntentPerformance {
+  id         String   @id @default(uuid())
+  intent     String
+  category   String
+  results    Int
+  profile    Json
+  confidence Float
+  createdAt  DateTime @default(now())
+
+  @@index([category])
+  @@index([intent])
+}
+
+model ExpectedRequirement {
+  id          String  @id @default(uuid())
+  category    String
+  requirement String
+  conditions  Json
+  priority    String
+  citation    String?
+  penalty     String?
+
+  @@index([category])
+}
+
+model CoverageReport {
+  id                String          @id @default(uuid())
+  checkId           String          @unique
+  overallScore      Int
+  gaps              Json
+  recommendations   Json
+  visualizationData Json?
+  createdAt         DateTime        @default(now())
+  complianceCheck   ComplianceCheck @relation(fields: [checkId], references: [id])
+}
