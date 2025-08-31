@@ -10,7 +10,6 @@ import {
   ComplianceCheckResponse,
   Requirement
 } from "../types/compliance.types";
-import { IntentLearningService } from "../services/intent-learning.service";
 import { CoverageVisualizationService } from "../services/coverage-visualization.service";
 import { getWebSocketService } from "../services/websocket.service";
 
@@ -18,13 +17,11 @@ export class ComplianceController {
   private complianceService: ComplianceV2Service;
   private prisma: PrismaClient;
   private io?: SocketIOServer;
-  private intentLearning: IntentLearningService;
   private visualizationService: CoverageVisualizationService;
 
   constructor(io?: SocketIOServer) {
     this.prisma = new PrismaClient();
     this.io = io;
-    this.intentLearning = new IntentLearningService();
     this.visualizationService = new CoverageVisualizationService();
     this.complianceService = new ComplianceV2Service();
   }
