@@ -22,7 +22,7 @@ export class ComplianceV2Service {
     this.firecrawlBatch = new FirecrawlBatchService();
     this.aiModel = new ChatOpenAI({
       openAIApiKey: process.env.OPENAI_API_KEY,
-      modelName: "gpt-4o-mini",
+      modelName: "gpt-4o",
       temperature: 0.1,
     });
   }

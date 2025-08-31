@@ -7,15 +7,14 @@ function App() {
   const [showWarmupPopup, setShowWarmupPopup] = useState(false);
 
   useEffect(() => {
-    // Check if we need to show warmup popup (first visit in session)
-    if (WarmupService.shouldShowWarmup()) {
-      setShowWarmupPopup(true);
-    }
+    // Popup disabled - using paid instance now
+    // if (WarmupService.shouldShowWarmup()) {
+    //   setShowWarmupPopup(true);
+    // }
     
-    // Always call warmup on page load to spin up the backend
-    // This happens silently in the background
+    // Keep warmup call for faster initial response
     WarmupService.warmupBackend().catch(err => {
-      console.log('Backend warmup call initiated (may take 15-30s if cold start)');
+      console.log('Backend health check');
     });
   }, []);
 
