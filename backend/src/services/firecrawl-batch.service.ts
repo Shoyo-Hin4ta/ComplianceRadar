@@ -1,6 +1,7 @@
 import FirecrawlApp from "@mendable/firecrawl-js";
 import Bottleneck from 'bottleneck';
 import { v4 as uuidv4 } from 'uuid';
+import { BusinessProfile } from '../types/compliance.types';
 
 interface ComplianceRequirement {
   name: string;
@@ -107,29 +108,49 @@ export class FirecrawlBatchService {
   }
 
   /**
-   * Create extraction prompt based on URL
+   * Create extraction prompt based on URL and business profile
    */
-  private getExtractionPrompt(url: string): string {
-    const basePrompt = `Extract ALL compliance requirements, regulations, forms, deadlines, and penalties from this page. 
-Include:
-- Tax requirements and forms
-- Labor law requirements
-- Safety regulations
-- Licensing requirements
-- Filing deadlines
-- Penalties for non-compliance
-- Conditions when requirements apply (employee thresholds, revenue, etc.)
+  private getExtractionPrompt(url: string, businessProfile?: BusinessProfile): string {
+    // If no business profile provided, fall back to broad extraction
+    if (!businessProfile) {
+      return `Extract ALL compliance requirements, regulations, forms, deadlines, and penalties from this page.`;
+    }
 
-Be thorough and extract every requirement mentioned on the page.`;
+    const basePrompt = `Extract compliance requirements from this page that apply to:
+- Business Type: ${businessProfile.industry}
+- Location: ${businessProfile.city}, ${businessProfile.state}
 
+CRITICAL: Only extract requirements that:
+1. Apply to businesses in ${businessProfile.state} (or federal requirements that apply nationwide)
+2. Apply to ${businessProfile.industry} businesses (or general business requirements)
+3. Are MANDATORY (have legal penalties for non-compliance) or clearly marked as required
+
+SKIP requirements for:
+- Other states or cities (unless it's ${businessProfile.city}, ${businessProfile.state})
+- Unrelated industries (mining, healthcare, etc. if not relevant to ${businessProfile.industry})
+- Optional best practices without legal requirements
+
+For each requirement, extract:
+- name: Clear requirement name
+- description: What it is and why it's required
+- agency: Government agency that enforces this
+- formNumber: Official form number if mentioned
+- deadline: When it must be done/filed
+- frequency: How often (annual, quarterly, monthly)
+- penalty: Specific fine or consequence for non-compliance
+- appliesWhen: Conditions when this applies (e.g., "businesses with 15+ employees")
+
+Be specific and only include what definitely applies to this business profile.`;
+
+    // Add specific focus for government sites
     if (url.includes('irs.gov')) {
-      return basePrompt + '\nFocus on tax forms, payment deadlines, and tax penalties.';
+      return basePrompt + '\nFocus on federal tax requirements that apply to all US businesses.';
     }
     if (url.includes('dol.gov')) {
-      return basePrompt + '\nFocus on labor laws, employee rights, and workplace requirements.';
+      return basePrompt + '\nFocus on federal labor laws that apply to all US employers.';
     }
     if (url.includes('osha.gov')) {
-      return basePrompt + '\nFocus on safety requirements, training, and compliance standards.';
+      return basePrompt + '\nFocus on workplace safety requirements for this industry.';
     }
     
     return basePrompt;
@@ -140,7 +161,8 @@ Be thorough and extract every requirement mentioned on the page.`;
    */
   async batchScrapeWithExtraction(
     urls: string[],
-    eventEmitter?: (event: any) => void
+    eventEmitter?: (event: any) => void,
+    businessProfile?: BusinessProfile
   ): Promise<BatchScrapeResult[]> {
     this.currentJobId = uuidv4();
     
@@ -169,7 +191,8 @@ Be thorough and extract every requirement mentioned on the page.`;
             url, 
             i + index, 
             urls.length,
-            eventEmitter
+            eventEmitter,
+            businessProfile
           )
         )
       );
@@ -234,7 +257,8 @@ Be thorough and extract every requirement mentioned on the page.`;
     url: string,
     index: number,
     total: number,
-    eventEmitter?: (event: any) => void
+    eventEmitter?: (event: any) => void,
+    businessProfile?: BusinessProfile
   ): Promise<BatchScrapeResult | null> {
     return this.limiter.schedule(async () => {
       const progress = 25 + Math.floor((60 * (index + 1)) / total);
@@ -261,7 +285,7 @@ Be thorough and extract every requirement mentioned on the page.`;
             {
               type: 'json',
               schema: this.getComplianceExtractionSchema(),
-              prompt: this.getExtractionPrompt(url)
+              prompt: this.getExtractionPrompt(url, businessProfile)
             }
           ],
           onlyMainContent: true,

@@ -62,13 +62,6 @@ export class ComplianceV2Service {
         title: u.title
       }));
 
-      emit({
-        type: "urls-received",
-        count: urls.length,
-        message: `Found ${urls.length} sources from search`,
-        progress: 20
-      });
-
       if (urls.length === 0) {
         throw new Error("No compliance sources found. Please try again.");
       }
@@ -121,7 +114,8 @@ export class ComplianceV2Service {
 
       const scrapedResults = await this.firecrawlBatch.batchScrapeWithExtraction(
         urlsToScrape,
-        (event) => emit(event)
+        (event) => emit(event),
+        businessProfile
       );
       
       // Create a map to lookup category by URL
@@ -189,23 +183,65 @@ export class ComplianceV2Service {
         progress: 90
       });
 
-      // Step 5.5: AI Classification of requirements (fine-tune if needed)
+      // Step 5.5: AI-powered intelligent deduplication
       emit({
-        type: "processing-requirements",
-        message: "Processing extracted requirements...",
-        progress: 92
+        type: "ai-deduplication",
+        message: "Applying intelligent deduplication to remove duplicates and irrelevant requirements...",
+        progress: 91
       });
 
-      console.log(`Starting AI classification for ${uniqueRequirements.length} requirements...`);
-      let classifiedRequirements = uniqueRequirements;
+      let intelligentlyDeduped = uniqueRequirements;
+      let aiDeduplicationStats = null;
+
+      try {
+        const startDedup = Date.now();
+        intelligentlyDeduped = await this.deduplicateWithAI(uniqueRequirements, businessProfile);
+        const dedupTime = ((Date.now() - startDedup) / 1000).toFixed(1);
+        
+        aiDeduplicationStats = {
+          originalCount: uniqueRequirements.length,
+          afterDedup: intelligentlyDeduped.length,
+          duplicatesRemoved: uniqueRequirements.length - intelligentlyDeduped.length,
+          timeSeconds: dedupTime
+        };
+
+        emit({
+          type: "ai-deduplication-complete",
+          message: `Intelligently reduced to ${intelligentlyDeduped.length} relevant requirements`,
+          afterDedup: intelligentlyDeduped.length,
+          duplicatesRemoved: aiDeduplicationStats.duplicatesRemoved,
+          irrelevantRemoved: 0, // Will be calculated from the AI response
+          progress: 92
+        });
+
+        console.log(`AI deduplication completed: ${uniqueRequirements.length} → ${intelligentlyDeduped.length} requirements in ${dedupTime}s`);
+      } catch (deduplicationError) {
+        console.error('AI deduplication failed, using basic deduplication:', deduplicationError);
+        emit({
+          type: "ai-deduplication-failed",
+          message: "AI deduplication unavailable, using basic deduplication",
+          progress: 92
+        });
+        // Fall back to basic deduplication results
+      }
+
+      // Step 6: AI Classification of requirements (fine-tune if needed)
+      emit({
+        type: "processing-requirements",
+        message: "Classifying requirements by jurisdiction...",
+        progress: 93
+      });
+
+      console.log(`Starting AI classification for ${intelligentlyDeduped.length} requirements...`);
+      let classifiedRequirements = intelligentlyDeduped;
       
       try {
-        classifiedRequirements = await this.classifyRequirementsWithAI(uniqueRequirements, businessProfile);
+        classifiedRequirements = await this.classifyRequirementsWithAI(intelligentlyDeduped, businessProfile);
         console.log(`AI classification completed successfully`);
       } catch (classificationError) {
         console.error('AI classification failed, using fallback sourceType:', classificationError);
         // Ensure all requirements have a valid sourceType even if classification fails
-        classifiedRequirements = uniqueRequirements.map(req => {
+        classifiedRequirements = intelligentlyDeduped.map(req => {
           if (!req.sourceType || !['federal', 'state', 'city', 'industry'].includes(req.sourceType)) {
             req.sourceType = this.inferSourceType(req) as any;
           }
@@ -307,6 +343,169 @@ export class ComplianceV2Service {
     }
     
     return Array.from(seen.values());
+  }
+
+  /**
+   * Intelligent AI-powered deduplication using GPT-4o
+   * Removes duplicates and irrelevant requirements based on business profile
+   */
+  private async deduplicateWithAI(
+    requirements: Requirement[], 
+    businessProfile: BusinessProfile
+  ): Promise<Requirement[]> {
+    try {
+      // Extract business structure and factors
+      const businessStructure = businessProfile.specialFactors.find(f => 
+        f.includes('Business structure:'))?.replace('Business structure: ', '') || 'unknown';
+      const otherFactors = businessProfile.specialFactors.filter(f => 
+        !f.includes('Business structure:')).join(', ') || 'none';
+
+      const prompt = `You are a US compliance deduplication expert. Consolidate duplicate requirements and remove irrelevant ones WITHOUT inventing new information.
+
+BUSINESS PROFILE
+- Type: ${businessProfile.industry}${businessProfile.naicsCode ? ` (NAICS ${businessProfile.naicsCode})` : ''}
+- Location: ${businessProfile.city}, ${businessProfile.state}
+- Employees: ${businessProfile.employeeCount || 0}
+- Annual Revenue: ${businessProfile.annualRevenue ? `$${businessProfile.annualRevenue.toLocaleString()}` : 'unknown'}
+- Legal Structure: ${businessStructure}
+- Activities/Factors: ${otherFactors}
+
+RAW REQUIREMENTS (${requirements.length} total)
+${JSON.stringify(requirements.map(r => ({
+  name: r.name,
+  description: r.description,
+  source: r.source,
+  sourceType: r.sourceType,
+  sourceUrl: r.sourceUrl,
+  formNumber: r.formNumber,
+  deadline: r.deadline,
+  penalty: r.penalty,
+  agency: r.metadata?.agency
+})), null, 2)}
+
+GOAL
+Produce a deduplicated set of requirements. Each requirement already has a sourceType (federal/state/city/industry) assigned. 
+Your job is to find and merge duplicates WITHIN each category, not across categories.
+
+IMPORTANT CONTEXT
+- Each requirement already has sourceType: "federal" | "state" | "city" | "industry"
+- These categories are already correctly assigned based on the source
+- You must preserve all categories - do NOT remove entire categories
+- Only deduplicate within the same sourceType
+
+DUPLICATE DETECTION PROCESS
+1) GROUP BY SOURCETYPE FIRST:
+   - Separate requirements into federal, state, city, and industry groups
+   - Only look for duplicates within each group
+
+2) WITHIN EACH GROUP, detect duplicates using:
+   HARD MATCHES:
+   - Same form number (e.g., two "Form 941" in federal)
+   - Same agency + same license/permit (e.g., two "State Business License" in state)
+   
+   SOFT MATCHES:
+   - Similar names (e.g., "Seller's Permit" ≈ "Sales Tax Permit" within state)
+   - Same topic + overlapping description (within same sourceType)
+
+3) MERGE DUPLICATES:
+   - Keep the most complete version (has form numbers, deadlines, penalties)
+   - Prefer .gov sources over .com sources
+   - List merged items in mergedFrom array
+
+IRRELEVANCE FILTER
+Only remove items that are clearly wrong for this business:
+- Wrong industry (e.g., mining permits, funeral home license for a restaurant)
+- Professional licenses unrelated to the business (e.g., medical license for restaurant)
+- Exotic/irrelevant permits (e.g., mussel dealer, wildlife breeder for restaurant)
+
+PRESERVE ALL:
+- Federal requirements (they apply to all US businesses)
+- State requirements for ${businessProfile.state}
+- City/local requirements for ${businessProfile.city}
+- Industry requirements relevant to ${businessProfile.industry}
+- Conditional items that might apply (e.g., liquor license, ADA compliance)
+
+Remember: Business size doesn't exempt from federal/state laws. Keep all jurisdictional requirements.
+
+SOURCE URL PREFERENCE
+If multiple URLs exist for the same requirement, prefer .gov over .com sources.
+
+PRIORITY GUIDANCE
+If unsure whether a requirement applies, mark as "conditional" rather than "unlikely".
+
+NON-MERGE RULES
+- Never merge across different sourceTypes (federal vs state vs city vs industry)
+- Never change a requirement's sourceType - keep it as provided
+- Never remove entire categories (must have federal, state, city, industry sections if they exist in input)
+- Never invent new forms, deadlines, penalties not present in RAW REQUIREMENTS
+- Keep primary sources (.gov) over secondary sources when conflicting
+
+RETURN JSON ONLY
+{
+  "requirements": [
+    {
+      "name": "Clear requirement name",
+      "description": "What it is and why needed",
+      "source": "Specific agency name",
+      "sourceType": "federal|state|city|industry",
+      "sourceUrl": "Most authoritative URL",
+      "formNumber": "If present",
+      "deadline": "If specified",
+      "penalty": "If specified",
+      "priority": "essential|conditional|unlikely",
+      "mergedFrom": ["List of original requirement names that were merged"],
+      "applicability": "Short explanation of when/why this applies"
+    }
+  ],
+  "statistics": {
+    "originalCount": ${requirements.length},
+    "afterDeduplication": 0,
+    "duplicatesRemoved": 0,
+    "irrelevantRemoved": 0
+  },
+  "removalReasons": {
+    "irrelevant": [{"name": "...", "reason": "wrong industry/jurisdiction"}],
+    "duplicates": [{"kept": "...", "removed": "...", "reason": "same form/agency"}]
+  }
+}`;
+
+      const response = await this.aiModel.invoke(prompt);
+      const content = response.content as string;
+      
+      // Parse AI response
+      const result = JSON.parse(
+        content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+      );
+
+      // Convert back to Requirement format
+      const deduplicatedRequirements: Requirement[] = result.requirements.map((req: any) => ({
+        id: uuidv4(),
+        name: req.name,
+        description: req.description,
+        source: req.source,
+        sourceUrl: req.sourceUrl,
+        sourceType: req.sourceType as any,
+        formNumber: req.formNumber,
+        deadline: req.deadline,
+        penalty: req.penalty,
+        category: this.categorizeRequirement(req, req.sourceUrl),
+        relevanceScore: req.priority === 'essential' ? 1.0 : req.priority === 'conditional' ? 0.7 : 0.3,
+        verified: false,
+        metadata: {
+          priority: req.priority,
+          mergedFrom: req.mergedFrom,
+          applicability: req.applicability
+        }
+      }));
+
+      console.log(`AI Deduplication Statistics:`, result.statistics);
+      console.log(`Removal Reasons:`, result.removalReasons);
+
+      return deduplicatedRequirements;
+    } catch (error) {
+      console.error('AI deduplication failed:', error);
+      throw error; // Let caller handle fallback
+    }
   }
 
   private organizeRequirements(requirements: Requirement[]) {

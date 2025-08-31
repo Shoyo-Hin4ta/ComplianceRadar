@@ -29,9 +29,12 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({ checkId }) =
     switch(event.type) {
       // Query phase
       case 'query-building': return '🔨 Building comprehensive compliance query...';
-      case 'fetching-urls': return '🔍 Searching for compliance information...';
-      case 'url-found': return `📌 Found: ${event.title || 'source'} (${event.url?.split('/')[2] || event.url})`;
-      case 'urls-received': return `📚 Found ${event.count} information sources`;
+      case 'fetching-urls': return '🔍 Initiating compliance search...';
+      case 'sonar-searching': return '🌐 Searching the internet for compliance requirements...';
+      case 'search-complete': 
+        return `✅ Found ${event.count} sources in ${event.searchTime}s (Federal: ${event.breakdown?.federal || 0}, State: ${event.breakdown?.state || 0}, Local: ${event.breakdown?.local || 0}, Industry: ${event.breakdown?.industry || 0})`;
+      case 'url-found': return `📌 ${event.title || 'Source'} (${event.index}/${event.total})`;
+      case 'urls-discovered': return `📚 Analyzing ${event.count} authoritative sources`;
       
       // Filtering phase
       case 'filtering-urls': return '🎯 Analyzing relevance of sources...';
@@ -50,7 +53,11 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({ checkId }) =
       // Processing phase
       case 'processing-data': return '📋 Extracting and organizing requirements...';
       case 'aggregation-complete': return `🔍 Processed ${event.afterDedup} unique requirements (removed ${event.totalFound - event.afterDedup} duplicates)`;
-      case 'processing-requirements': return '🔄 Processing extracted requirements...';
+      case 'ai-deduplication': return '🤖 Applying intelligent deduplication to remove duplicates and irrelevant requirements...';
+      case 'ai-deduplication-complete': 
+        return `✅ Intelligently reduced to ${event.afterDedup} relevant requirements (removed ${event.duplicatesRemoved} duplicates${event.irrelevantRemoved ? `, ${event.irrelevantRemoved} irrelevant` : ''})`;
+      case 'ai-deduplication-failed': return '⚠️ AI deduplication unavailable, using basic deduplication';
+      case 'processing-requirements': return '🔄 Classifying requirements by jurisdiction...';
       case 'starting-extraction': return '⚙️ Beginning requirement extraction...';
       
       // Complete
@@ -134,9 +141,15 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({ checkId }) =
         return 'Analyzing your business profile to build comprehensive search queries...';
       case 'discovery':
         const discovered = v2Progress.stats.urlsDiscovered;
+        const lastEvent = v2Progress.rawEvents[v2Progress.rawEvents.length - 1];
+        if (lastEvent?.type === 'sonar-searching') {
+          return 'Searching federal, state, local, and industry databases simultaneously...';
+        } else if (lastEvent?.type === 'search-complete') {
+          return `Found ${discovered} sources from parallel searches in ${lastEvent.searchTime}s`;
+        }
         return discovered > 0 
-          ? `Found ${discovered} potential compliance sources so far...`
-          : 'Searching across government and industry databases...';
+          ? `Found ${discovered} potential compliance sources`
+          : 'Initiating search across compliance databases...';
       case 'filtering':
         return 'Using AI to identify the most relevant sources for your business...';
       case 'scraping':

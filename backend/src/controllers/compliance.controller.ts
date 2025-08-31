@@ -55,9 +55,7 @@ export class ComplianceController {
         }
       });
 
-      // Process compliance check asynchronously
-      this.processComplianceCheck(complianceCheck.id, validatedProfile, sessionId);
-
+      // Return response immediately so frontend can subscribe
       const response: ComplianceCheckResponse = {
         id: complianceCheck.id,
         status: "processing",
@@ -65,6 +63,13 @@ export class ComplianceController {
       };
 
       res.status(202).json(response);
+
+      // Process compliance check asynchronously with small delay
+      // This gives frontend time to receive response and join the WebSocket room
+      setTimeout(() => {
+        console.log(`Starting processing for check ${complianceCheck.id} after delay`);
+        this.processComplianceCheck(complianceCheck.id, validatedProfile, sessionId);
+      }, 300); // 300ms should be enough for frontend to join room
     } catch (error) {
       console.error("Error in checkCompliance:", error);
       res.status(400).json({

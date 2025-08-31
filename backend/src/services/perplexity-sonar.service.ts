@@ -180,12 +180,13 @@ Focus on requirements specific to the ${industry} industry. Include both mandato
       };
       let allContent = '';
 
-      // Emit single event for all searches starting
+      // Emit clear event that we're searching the internet
       if (eventEmitter) {
         eventEmitter({
           type: 'sonar-searching',
-          message: 'Searching 40+ government databases...',
-          progress: 10
+          message: 'Searching the internet for compliance requirements...',
+          progress: 10,
+          details: `Querying federal, state (${businessProfile.state}), local (${businessProfile.city || 'county'}), and ${businessProfile.industry} industry databases simultaneously`
         });
       }
 
@@ -211,12 +212,12 @@ Focus on requirements specific to the ${industry} industry. Include both mandato
                 content: federalQuery
               }
             ],
+            search_domain_filter: [
+              'irs.gov', 'dol.gov', 'osha.gov', 'eeoc.gov', 'ftc.gov',
+              'fda.gov', 'epa.gov', 'sba.gov', 'healthcare.gov', 'ada.gov'
+            ],
             web_search_options: {
-              search_context_size: 'high',
-              search_domain_filter: [
-                'irs.gov', 'dol.gov', 'osha.gov', 'eeoc.gov', 'ftc.gov',
-                'fda.gov', 'epa.gov', 'sba.gov', 'healthcare.gov', 'ada.gov'
-              ]
+              search_context_size: 'high'
             }
           },
           {
@@ -238,13 +239,13 @@ Focus on requirements specific to the ${industry} industry. Include both mandato
                 content: stateQuery
               }
             ],
+            search_domain_filter: [
+              `${businessProfile.state.toLowerCase()}.gov`,
+              `state.${businessProfile.state.toLowerCase()}.us`,
+              'tax.gov', 'labor.gov'
+            ],
             web_search_options: {
-              search_context_size: 'high',
-              search_domain_filter: [
-                `${businessProfile.state.toLowerCase()}.gov`,
-                `state.${businessProfile.state.toLowerCase()}.us`,
-                'tax.gov', 'labor.gov'
-              ]
+              search_context_size: 'high'
             }
           },
           {
@@ -364,32 +365,40 @@ Focus on requirements specific to the ${industry} industry. Include both mandato
       console.log(`  - City-specific URLs: ${cityUrls.length}`);
       console.log(`  - Other sources: ${uniqueUrls.filter(u => !u.url.includes('.gov')).length}`);
 
-      // Emit URL discovery events (same as before)
+      // Emit search complete event with breakdown
       if (eventEmitter) {
+        const searchTimeSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+        
         eventEmitter({
-          type: 'urls-received',
-          message: `Found ${uniqueUrls.length} compliance sources from 4 searches`,
+          type: 'search-complete',
+          message: `Found ${uniqueUrls.length} compliance sources from 4 parallel searches in ${searchTimeSeconds}s`,
           count: uniqueUrls.length,
-          progress: 15
+          progress: 18,
+          breakdown: {
+            federal: federalUrls.length,
+            state: stateUrls.length,
+            local: localUrls.length,
+            industry: industryUrls.length
+          },
+          searchTime: searchTimeSeconds
         });
 
+        // Emit individual URL events (all at once since they were found simultaneously)
         uniqueUrls.forEach((result, index) => {
-          setTimeout(() => {
-            eventEmitter({
-              type: 'url-found',
-              url: result.url,
-              title: result.title,
-              index: index + 1,
-              total: uniqueUrls.length,
-              progress: 15 + (5 * (index + 1) / uniqueUrls.length)
-            });
-          }, index * 20); // Stagger the events for visual effect
+          eventEmitter({
+            type: 'url-found',
+            url: result.url,
+            title: result.title,
+            index: index + 1,
+            total: uniqueUrls.length
+          });
         });
 
+        // Now emit the discovered URLs summary event
         eventEmitter({
           type: 'urls-discovered',
           count: uniqueUrls.length,
-          message: `Found ${uniqueUrls.length} authoritative sources to analyze`,
+          message: `Analyzing ${uniqueUrls.length} authoritative sources`,
           progress: 20
         });
       }

@@ -73,7 +73,7 @@ interface ComplianceActions {
 
 export type ComplianceStore = ComplianceState & ComplianceActions;
 
-const initialV2Progress: V2ProgressDetails = {
+const createInitialV2Progress = (): V2ProgressDetails => ({
   currentPhase: 'query',
   currentStep: '',
   overallProgress: 0,
@@ -100,13 +100,13 @@ const initialV2Progress: V2ProgressDetails = {
   startTime: undefined,
   estimatedTimeRemaining: undefined,
   rawEvents: [],
-};
+});
 
 const initialState: ComplianceState = {
   businessProfile: null,
   currentCheck: null,
   workflowStatus: null,
-  v2Progress: initialV2Progress,
+  v2Progress: createInitialV2Progress(),
   recentChecks: [],
   isLoading: false,
   isSubmitting: false,
@@ -133,7 +133,7 @@ export const useComplianceStore = create<ComplianceStore>()(
             error: null, 
             businessProfile: profile,
             v2Progress: {
-              ...initialV2Progress,
+              ...createInitialV2Progress(),
               startTime: Date.now()
             }
           });
@@ -168,7 +168,7 @@ export const useComplianceStore = create<ComplianceStore>()(
             currentCheck: null, 
             workflowStatus: null,
             unsubscribe: null,
-            v2Progress: initialV2Progress
+            v2Progress: createInitialV2Progress()
           });
         },
 
@@ -233,8 +233,8 @@ export const useComplianceStore = create<ComplianceStore>()(
           set(state => {
             const v2Progress = { ...state.v2Progress };
             
-            // Store the raw event (keep last 50 events)
-            v2Progress.rawEvents = [...v2Progress.rawEvents, event].slice(-50);
+            // Store the raw event (keep last 200 events to preserve full history)
+            v2Progress.rawEvents = [...v2Progress.rawEvents, event].slice(-200);
             
             // Update current step message
             v2Progress.currentStep = event.message || v2Progress.currentStep;
@@ -250,6 +250,12 @@ export const useComplianceStore = create<ComplianceStore>()(
               switch (event.type) {
                 case 'query-building':
                   calculatedProgress = 5;
+                  break;
+                case 'sonar-searching':
+                  calculatedProgress = 10;
+                  break;
+                case 'search-complete':
+                  calculatedProgress = 18;
                   break;
                 case 'urls-discovered':
                   calculatedProgress = 20;
@@ -275,6 +281,16 @@ export const useComplianceStore = create<ComplianceStore>()(
                 case 'processing-data':
                   calculatedProgress = 90;
                   break;
+                case 'ai-deduplication':
+                  calculatedProgress = 91;
+                  break;
+                case 'ai-deduplication-complete':
+                case 'ai-deduplication-failed':
+                  calculatedProgress = 92;
+                  break;
+                case 'processing-requirements':
+                  calculatedProgress = 93;
+                  break;
                 case 'scoring-complete':
                   calculatedProgress = 95;
                   break;
@@ -297,18 +313,15 @@ export const useComplianceStore = create<ComplianceStore>()(
                 v2Progress.currentPhase = 'discovery';
                 break;
                 
-              case 'url-found':
+              case 'search-complete':
                 v2Progress.currentPhase = 'discovery';
-                v2Progress.discoveredUrls.push({
-                  url: event.url,
-                  title: event.title,
-                  index: event.index,
-                  total: event.total
-                });
-                v2Progress.stats.urlsDiscovered = v2Progress.discoveredUrls.length;
+                v2Progress.stats.urlsDiscovered = event.count || 0;
+                // Store the breakdown for display
+                if (event.breakdown) {
+                  v2Progress.jurisdictionBreakdown = event.breakdown;
+                }
                 break;
                 
-              case 'urls-received':
               case 'urls-discovered':
                 v2Progress.currentPhase = 'discovery';
                 v2Progress.stats.urlsDiscovered = event.count || v2Progress.stats.urlsDiscovered;
@@ -392,6 +405,20 @@ export const useComplianceStore = create<ComplianceStore>()(
                 break;
                 
               case 'processing-data':
+              case 'ai-deduplication':
+                v2Progress.currentPhase = 'processing';
+                break;
+                
+              case 'ai-deduplication-complete':
+                v2Progress.currentPhase = 'processing';
+                // Update stats with the deduplicated count
+                if (event.afterDedup !== undefined) {
+                  v2Progress.stats.totalRequirements = event.afterDedup;
+                  v2Progress.stats.duplicatesRemoved = (v2Progress.stats.duplicatesRemoved || 0) + (event.duplicatesRemoved || 0);
+                }
+                break;
+                
+              case 'ai-deduplication-failed':
               case 'processing-requirements':
                 v2Progress.currentPhase = 'processing';
                 break;
